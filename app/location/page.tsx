@@ -18,20 +18,29 @@ export default function LocationPage() {
   const [mapStatus, setMapStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [currentLocation, setCurrentLocation] = useState<{lat: number, lng: number} | null>(null);
+  const [isDraggingMap, setIsDraggingMap] = useState(false);
   
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
-  const markerInstanceRef = useRef<any>(null);
 
   useEffect(() => {
     // Define the callback for SDK load
     window.initMap = () => {
       if (mapContainerRef.current && !mapInstanceRef.current && window.mappls) {
         try {
-          mapInstanceRef.current = new window.mappls.Map(mapContainerRef.current, {
+          const map = new window.mappls.Map(mapContainerRef.current, {
             center: [28.638698386592438, 77.27604556863412],
             zoom: 14,
           });
+          mapInstanceRef.current = map;
+
+          map.on('dragstart', () => setIsDraggingMap(true));
+          map.on('dragend', () => setIsDraggingMap(false));
+          map.on('idle', () => {
+            const center = map.getCenter();
+            setCurrentLocation({ lat: center.lat, lng: center.lng });
+          });
+
           setMapStatus('ready');
         } catch (error) {
           console.error("Failed to initialize map:", error);
@@ -46,9 +55,6 @@ export default function LocationPage() {
         // Mappls SDK doesn't have a strict destroy method exposed in this snippet,
         // but we'll clear the ref so it can be re-created if the component remounts.
         mapInstanceRef.current = null;
-      }
-      if (markerInstanceRef.current) {
-        markerInstanceRef.current = null;
       }
       // Depending on Next.js, window.initMap might need to persist if script is cached,
       // but cleaning it up is safer for SPA navigations
@@ -79,15 +85,6 @@ export default function LocationPage() {
             center: [longitude, latitude],
             zoom: 18,
             speed: 1.2
-          });
-
-          if (markerInstanceRef.current) {
-            markerInstanceRef.current.remove();
-          }
-
-          markerInstanceRef.current = new window.mappls.Marker({
-            map: mapInstanceRef.current,
-            position: { lat: latitude, lng: longitude }
           });
 
           setCurrentLocation({ lat: latitude, lng: longitude });
@@ -155,7 +152,11 @@ export default function LocationPage() {
 
             {/* Center Marker Overlay */}
             {mapStatus === 'ready' && (
-              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10 pointer-events-none drop-shadow-md pb-8">
+              <motion.div 
+                animate={{ y: isDraggingMap ? -15 : 0 }}
+                transition={{ type: "spring", stiffness: 300, damping: 20 }}
+                className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10 pointer-events-none drop-shadow-md pb-8"
+              >
                 <div className="bg-primary text-white text-[10px] font-bold px-3 py-1.5 rounded-full shadow-md mb-1 whitespace-nowrap">
                   Order Here
                 </div>
@@ -165,7 +166,7 @@ export default function LocationPage() {
                     <circle cx="12" cy="10" r="3" fill="white"/>
                   </svg>
                 </div>
-              </div>
+              </motion.div>
             )}
 
             {/* GPS Button */}
