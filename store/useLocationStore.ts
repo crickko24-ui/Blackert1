@@ -21,7 +21,7 @@ export const useLocationStore = create<LocationState>()(
       setLocation: (address, lat, lng) => set({ address, lat, lng }),
     }),
     {
-      name: 'location-storage',
+      name: 'location-storage-v2',
     }
   )
 );
