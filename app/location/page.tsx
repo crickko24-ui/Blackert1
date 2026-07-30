@@ -55,7 +55,8 @@ export default function LocationPage() {
                pickerInstanceRef.current = window.mappls.placePicker({
                   map: map,
                   header: false,
-                  closeBtn: false
+                  closeBtn: false,
+                  location: true
                }, (data: any) => {
                   handlePlaceSelected(data);
                });
@@ -177,27 +178,40 @@ export default function LocationPage() {
   };
 
   const handleGPS = () => {
+    console.log("GPS button clicked");
+    showToast("Requesting location...");
+    
     if (!navigator.geolocation) {
-      showToast("Unable to fetch current location");
+      showToast("Geolocation not supported by browser");
       return;
     }
 
     navigator.geolocation.getCurrentPosition(
       (position) => {
+        console.log("Geolocation success:", position.coords);
         const { latitude, longitude } = position.coords;
         
         if (mapInstanceRef.current) {
-          mapInstanceRef.current.flyTo({
-            center: [longitude, latitude],
-            zoom: 18,
-            speed: 1.2
-          });
+          try {
+            if (typeof mapInstanceRef.current.flyTo === 'function') {
+              mapInstanceRef.current.flyTo({
+                center: [longitude, latitude],
+                zoom: 18,
+                speed: 1.2
+              });
+            } else if (typeof mapInstanceRef.current.setCenter === 'function') {
+              mapInstanceRef.current.setCenter([longitude, latitude]);
+            }
+          } catch (e) {
+            console.error("Map movement error:", e);
+          }
           
           if (window.mappls && window.mappls.revGeocode) {
             window.mappls.revGeocode({
               lat: latitude,
               lng: longitude
             }, (revData: any) => {
+              console.log("revGeocode response:", revData);
               const result = Array.isArray(revData) ? revData[0] : (revData?.results?.[0] || revData);
               if (result) {
                 const finalELoc = result.eloc || result.eLoc;
@@ -205,6 +219,9 @@ export default function LocationPage() {
                 
                 if (finalELoc) {
                   createPinMarker(finalELoc, finalPlaceName);
+                } else {
+                  // Fallback if eLoc is not returned
+                  createPinMarker(`${latitude},${longitude}`, finalPlaceName);
                 }
               }
             });
@@ -212,13 +229,14 @@ export default function LocationPage() {
         }
       },
       (error) => {
+        console.error("Geolocation error:", error);
         if (error.code === error.PERMISSION_DENIED) {
           showToast("Location permission denied");
         } else {
-          showToast("Unable to fetch current location");
+          showToast(`Unable to fetch location: ${error.message}`);
         }
       },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
     );
   };
 
@@ -274,6 +292,7 @@ export default function LocationPage() {
             {/* GPS Button */}
             {mapStatus === 'ready' && (
               <motion.button
+                type="button"
                 whileTap={{ scale: 0.9 }}
                 onClick={handleGPS}
                 className="absolute bottom-4 right-4 w-14 h-14 bg-white rounded-full shadow-premium flex items-center justify-center z-20 active:bg-gray-50 transition-colors"
