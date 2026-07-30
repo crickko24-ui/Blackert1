@@ -17,11 +17,26 @@ export default function LocationPage() {
   const router = useRouter();
   const [mapStatus, setMapStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const [currentLocation, setCurrentLocation] = useState<{lat: number, lng: number} | null>(null);
-  const [isDraggingMap, setIsDraggingMap] = useState(false);
+  
+  const [addressDetails, setAddressDetails] = useState<{
+    formatted_address?: string;
+    houseNumber?: string;
+    houseName?: string;
+    poi?: string;
+    street?: string;
+    locality?: string;
+    subLocality?: string;
+    city?: string;
+    district?: string;
+    state?: string;
+    pincode?: string;
+    lat?: number;
+    lng?: number;
+  }>({});
   
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
+  const pickerInstanceRef = useRef<any>(null);
 
   useEffect(() => {
     // Define the callback for SDK load
@@ -34,11 +49,16 @@ export default function LocationPage() {
           });
           mapInstanceRef.current = map;
 
-          map.on('dragstart', () => setIsDraggingMap(true));
-          map.on('dragend', () => setIsDraggingMap(false));
-          map.on('idle', () => {
-            const center = map.getCenter();
-            setCurrentLocation({ lat: center.lat, lng: center.lng });
+          map.addListener('load', () => {
+            if (!pickerInstanceRef.current && window.mappls.placePicker) {
+               pickerInstanceRef.current = window.mappls.placePicker({
+                  map: map,
+                  header: false,
+                  closeBtn: false
+               }, (data: any) => {
+                  handlePlaceSelected(data);
+               });
+            }
           });
 
           setMapStatus('ready');
@@ -56,12 +76,56 @@ export default function LocationPage() {
         // but we'll clear the ref so it can be re-created if the component remounts.
         mapInstanceRef.current = null;
       }
+      if (pickerInstanceRef.current) {
+        if (pickerInstanceRef.current.remove) {
+          pickerInstanceRef.current.remove();
+        }
+        pickerInstanceRef.current = null;
+      }
       // Depending on Next.js, window.initMap might need to persist if script is cached,
       // but cleaning it up is safer for SPA navigations
       // @ts-ignore
       delete window.initMap;
     };
   }, []);
+
+  const handlePlaceSelected = (data: any) => {
+    if (!data) return;
+
+    let updatedDetails = { ...data };
+    
+    // Check for missing fields
+    const hasMissingFields = !data.formatted_address || !data.locality || !data.city || !data.pincode;
+    
+    if (hasMissingFields && data.lat && data.lng && window.mappls.revGeocode) {
+      window.mappls.revGeocode({
+        lat: data.lat,
+        lng: data.lng
+      }, (revData: any) => {
+        // revData is usually an array of results or a single object depending on version
+        const result = Array.isArray(revData) ? revData[0] : (revData?.results?.[0] || revData);
+        if (result) {
+           updatedDetails = {
+             ...updatedDetails,
+             formatted_address: updatedDetails.formatted_address || result.formatted_address,
+             houseNumber: updatedDetails.houseNumber || result.houseNumber,
+             houseName: updatedDetails.houseName || result.houseName,
+             poi: updatedDetails.poi || result.poi,
+             street: updatedDetails.street || result.street,
+             locality: updatedDetails.locality || result.locality,
+             subLocality: updatedDetails.subLocality || result.subLocality,
+             city: updatedDetails.city || result.city,
+             district: updatedDetails.district || result.district,
+             state: updatedDetails.state || result.state,
+             pincode: updatedDetails.pincode || result.pincode
+           };
+        }
+        setAddressDetails(updatedDetails);
+      });
+    } else {
+      setAddressDetails(updatedDetails);
+    }
+  };
 
   const showToast = (message: string) => {
     setToastMessage(message);
@@ -86,8 +150,6 @@ export default function LocationPage() {
             zoom: 18,
             speed: 1.2
           });
-
-          setCurrentLocation({ lat: latitude, lng: longitude });
         }
       },
       (error) => {
@@ -104,7 +166,7 @@ export default function LocationPage() {
   return (
     <div className="flex flex-col h-[100dvh] bg-gray-50 overflow-hidden relative">
       <Script 
-        src="https://sdk.mappls.com/map/sdk/web?v=3.0&access_token=byvogujdawcolowohtwtslqpiylkzbksypup&callback=initMap"
+        src="https://sdk.mappls.com/map/sdk/web?v=3.0&access_token=byvogujdawcolowohtwtslqpiylkzbksypup&callback=initMap&plugins=placePicker,revGeocode"
         strategy="afterInteractive"
         onError={() => setMapStatus('error')}
       />
@@ -150,25 +212,6 @@ export default function LocationPage() {
               id="map"
             />
 
-            {/* Center Marker Overlay */}
-            {mapStatus === 'ready' && (
-              <motion.div 
-                animate={{ y: isDraggingMap ? -15 : 0 }}
-                transition={{ type: "spring", stiffness: 300, damping: 20 }}
-                className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10 pointer-events-none drop-shadow-md pb-8"
-              >
-                <div className="bg-primary text-white text-[10px] font-bold px-3 py-1.5 rounded-full shadow-md mb-1 whitespace-nowrap">
-                  Order Here
-                </div>
-                <div className="flex justify-center">
-                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="text-primary drop-shadow-sm">
-                    <path d="M21 10C21 17 12 23 12 23C12 23 3 17 3 10C3 7.61305 3.94821 5.32387 5.63604 3.63604C7.32387 1.94821 9.61305 1 12 1C14.3869 1 16.6761 1.94821 18.364 3.63604C20.0518 5.32387 21 7.61305 21 10Z" fill="currentColor" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                    <circle cx="12" cy="10" r="3" fill="white"/>
-                  </svg>
-                </div>
-              </motion.div>
-            )}
-
             {/* GPS Button */}
             {mapStatus === 'ready' && (
               <motion.button
@@ -202,7 +245,9 @@ export default function LocationPage() {
               </div>
               <div className="flex flex-col">
                 <span className="font-bold text-gray-900 text-sm">Delivery Location</span>
-                <span className="text-xs text-gray-500 mt-1 leading-relaxed line-clamp-2">Move the map to get accurate address details.</span>
+                <span className="text-xs text-gray-500 mt-1 leading-relaxed line-clamp-2">
+                  {addressDetails.formatted_address || "Move the map to get accurate address details."}
+                </span>
               </div>
             </div>
 
@@ -212,6 +257,8 @@ export default function LocationPage() {
                 <label className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-2">House / Flat / Block No.</label>
                 <input 
                   type="text" 
+                  value={addressDetails.houseNumber || addressDetails.houseName || ''}
+                  onChange={(e) => setAddressDetails({ ...addressDetails, houseNumber: e.target.value })}
                   className="w-full bg-white border border-gray-200 rounded-xl px-4 py-3.5 text-[15px] font-medium focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors text-gray-900 placeholder:text-gray-400 placeholder:font-normal"
                   placeholder="e.g. Flat 402, Sunshine Apartments"
                 />
@@ -220,6 +267,8 @@ export default function LocationPage() {
                 <label className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-2">Landmark (Optional)</label>
                 <input 
                   type="text" 
+                  value={addressDetails.poi || ''}
+                  onChange={(e) => setAddressDetails({ ...addressDetails, poi: e.target.value })}
                   className="w-full bg-white border border-gray-200 rounded-xl px-4 py-3.5 text-[15px] font-medium focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors text-gray-900 placeholder:text-gray-400 placeholder:font-normal"
                   placeholder="e.g. Near Apollo Hospital"
                 />
