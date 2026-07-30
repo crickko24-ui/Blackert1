@@ -66,18 +66,28 @@ export default function LocationPage() {
   }, []);
 
   const placeOfficialMarker = (lat: number, lng: number) => {
-    if (window.mappls && window.mappls.Marker && mapInstanceRef.current) {
-      if (markerInstanceRef.current && typeof markerInstanceRef.current.remove === 'function') {
-        markerInstanceRef.current.remove();
-      }
-      try {
-        markerInstanceRef.current = new window.mappls.Marker({
-          map: mapInstanceRef.current,
-          position: { lat, lng }
+    try {
+      if (window.mappls && window.mappls.Marker && mapInstanceRef.current) {
+        if (markerInstanceRef.current && typeof markerInstanceRef.current.remove === 'function') {
+          markerInstanceRef.current.remove();
+        }
+        try {
+          markerInstanceRef.current = new window.mappls.Marker({
+            map: mapInstanceRef.current,
+            position: { lat, lng }
+          });
+        } catch (e) {
+          console.error("Error creating marker:", e);
+        }
+      } else {
+        console.error("Missing requirements for marker creation:", {
+          mappls: !!window.mappls,
+          markerClass: window.mappls ? !!window.mappls.Marker : false,
+          mapInstance: !!mapInstanceRef.current
         });
-      } catch (e) {
-        console.error("Error creating marker:", e);
       }
+    } catch(e) {
+      console.error("Error in placeOfficialMarker:", e);
     }
   };
 
@@ -91,18 +101,29 @@ export default function LocationPage() {
     
     navigator.geolocation.getCurrentPosition(
       (position) => {
-        setIsLocating(false);
-        const { latitude, longitude } = position.coords;
-        
-        // Save latitude and longitude in React state
-        setAddressDetails(prev => ({ ...prev, lat: latitude, lng: longitude }));
-        
-        // Vibrate briefly if supported
-        if (navigator.vibrate) {
-          navigator.vibrate(50);
-        }
+        try {
+          console.log("GPS Success", position.coords.latitude, position.coords.longitude);
+          setIsLocating(false);
+          const { latitude, longitude } = position.coords;
+          
+          if (typeof latitude !== 'number' || typeof longitude !== 'number') {
+            console.error("Invalid coordinates:", latitude, longitude);
+            return;
+          }
+          
+          // Save latitude and longitude in React state
+          setAddressDetails(prev => ({ ...prev, lat: latitude, lng: longitude }));
+          
+          // Vibrate briefly if supported
+          if (navigator.vibrate) {
+            navigator.vibrate(50);
+          }
 
-        if (mapInstanceRef.current) {
+          if (!mapInstanceRef.current) {
+            console.error("mapInstanceRef.current is null! Map is not initialized properly.");
+            return;
+          }
+
           try {
             if (typeof mapInstanceRef.current.flyTo === 'function') {
               mapInstanceRef.current.flyTo({
@@ -119,12 +140,15 @@ export default function LocationPage() {
               mapInstanceRef.current.setCenter([longitude, latitude]);
               placeOfficialMarker(latitude, longitude);
             } else {
+              console.error("mapInstanceRef.current does not have flyTo or setCenter");
               placeOfficialMarker(latitude, longitude);
             }
           } catch (e) {
-            console.error("Map movement error:", e);
+            console.error("Map movement error inside try block:", e);
             placeOfficialMarker(latitude, longitude);
           }
+        } catch (e) {
+          console.error("GPS Success Callback Error:", e);
         }
       },
       (error) => {
