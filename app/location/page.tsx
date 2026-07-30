@@ -37,6 +37,7 @@ export default function LocationPage() {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
   const pickerInstanceRef = useRef<any>(null);
+  const pinMarkerRef = useRef<any>(null);
 
   useEffect(() => {
     // Define the callback for SDK load
@@ -82,6 +83,10 @@ export default function LocationPage() {
         }
         pickerInstanceRef.current = null;
       }
+      if (pinMarkerRef.current && typeof pinMarkerRef.current.remove === 'function') {
+        pinMarkerRef.current.remove();
+        pinMarkerRef.current = null;
+      }
       // Depending on Next.js, window.initMap might need to persist if script is cached,
       // but cleaning it up is safer for SPA navigations
       // @ts-ignore
@@ -89,10 +94,37 @@ export default function LocationPage() {
     };
   }, []);
 
+  const createPinMarker = (eLoc: string, placeName: string) => {
+    if (!window.mappls || !window.mappls.pinMarker || !mapInstanceRef.current) return;
+    
+    if (pinMarkerRef.current && typeof pinMarkerRef.current.remove === 'function') {
+      pinMarkerRef.current.remove();
+    }
+    
+    window.mappls.pinMarker(
+      {
+        map: mapInstanceRef.current,
+        pin: eLoc,
+        popupHtml: placeName,
+        popupOptions: {
+          openPopup: true
+        }
+      },
+      function(data: any) {
+        pinMarkerRef.current = data;
+        if (data && typeof data.fitbounds === 'function') {
+          data.fitbounds();
+        }
+      }
+    );
+  };
+
   const handlePlaceSelected = (data: any) => {
     if (!data) return;
 
     let updatedDetails = { ...data };
+    const eLoc = data.eloc || data.eLoc;
+    const placeName = data.placeName || data.place_name || data.formatted_address || "Selected Location";
     
     // Check for missing fields
     const hasMissingFields = !data.formatted_address || !data.locality || !data.city || !data.pincode;
@@ -119,10 +151,20 @@ export default function LocationPage() {
              state: updatedDetails.state || result.state,
              pincode: updatedDetails.pincode || result.pincode
            };
+           
+           const finalELoc = result.eloc || result.eLoc || eLoc;
+           const finalPlaceName = result.placeName || result.place_name || result.formatted_address || placeName;
+           
+           if (finalELoc) {
+             createPinMarker(finalELoc, finalPlaceName);
+           }
         }
         setAddressDetails(updatedDetails);
       });
     } else {
+      if (eLoc) {
+        createPinMarker(eLoc, placeName);
+      }
       setAddressDetails(updatedDetails);
     }
   };
@@ -150,6 +192,23 @@ export default function LocationPage() {
             zoom: 18,
             speed: 1.2
           });
+          
+          if (window.mappls && window.mappls.revGeocode) {
+            window.mappls.revGeocode({
+              lat: latitude,
+              lng: longitude
+            }, (revData: any) => {
+              const result = Array.isArray(revData) ? revData[0] : (revData?.results?.[0] || revData);
+              if (result) {
+                const finalELoc = result.eloc || result.eLoc;
+                const finalPlaceName = result.placeName || result.place_name || result.formatted_address || "Current Location";
+                
+                if (finalELoc) {
+                  createPinMarker(finalELoc, finalPlaceName);
+                }
+              }
+            });
+          }
         }
       },
       (error) => {
@@ -166,7 +225,7 @@ export default function LocationPage() {
   return (
     <div className="flex flex-col h-[100dvh] bg-gray-50 overflow-hidden relative">
       <Script 
-        src="https://sdk.mappls.com/map/sdk/web?v=3.0&access_token=byvogujdawcolowohtwtslqpiylkzbksypup&callback=initMap&plugins=placePicker,revGeocode"
+        src="https://sdk.mappls.com/map/sdk/web?v=3.0&access_token=byvogujdawcolowohtwtslqpiylkzbksypup&callback=initMap&plugins=placePicker,revGeocode,pinMarker"
         strategy="afterInteractive"
         onError={() => setMapStatus('error')}
       />
